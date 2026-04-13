@@ -1,0 +1,8 @@
+﻿# Local skills/prompt assets
+skills/
+.github/skills/
+
+# Secrets
+**/.env
+**/.env.*
+!**/.env.example
