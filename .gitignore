@@ -4,6 +4,16 @@
 skills/
 .github/skills/
 .tmp-skills/
+TROOPOD_BUILD_PROMPT.md
+
+# Generated progress/report docs to keep local only
+adaptlp/COMPLETION_STATUS.md
+adaptlp/DELIVERY_CHECKLIST.md
+adaptlp/END_TO_END_VERIFICATION.md
+adaptlp/FINAL_STATUS.md
+adaptlp/FINAL_VERIFICATION.md
+adaptlp/IMPLEMENTATION_SUMMARY.md
+adaptlp/TROOPOD_PROMPT_COVERAGE.md
 
 # -----------------------------
 # Secrets
