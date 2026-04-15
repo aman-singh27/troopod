@@ -1,3 +1,4 @@
+import asyncio
 import json
 import google.generativeai as genai
 from app.config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODELS
@@ -8,6 +9,33 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 class GeminiError(Exception):
     pass
+
+
+def _build_modification_prompt(ad_analysis: AdAnalysis, lp_content: dict) -> str:
+    return f"""You are a world-class CRO (Conversion Rate Optimization) specialist.
+
+AD ANALYSIS:
+{json.dumps(ad_analysis.model_dump(), indent=2)}
+
+CURRENT LANDING PAGE CONTENT:
+{json.dumps(lp_content, indent=2)}
+
+Your job: generate text-only landing page improvements that preserve the page structure while strengthening message match.
+
+Rules:
+1. The H1 MUST directly echo the ad's core promise or offer so the user immediately feels continuity.
+2. H2 and H3 changes are optional and should only be made when they reinforce the same message.
+3. CTA button text MUST align with the ad CTA and stay short, specific, and action-oriented.
+4. Hero subtext should support the H1 with clarity, urgency, trust, or specificity.
+5. Meta description should improve relevance, but never introduce claims that are not supported by the ad.
+6. Only modify text that exists in the LP content provided.
+7. Keep changes natural and professional - no keyword stuffing.
+8. Each replacement must be meaningfully different from the original.
+9. Maximum 8 modifications total.
+10. Favor message match over clever wording.
+
+Return ONLY a valid JSON array, no markdown, no preamble:
+[\n  {{\n    "element_type": "h1|h2|h3|cta_button|hero_subtext|meta_description",\n    "original_text": "exact original text from LP content",\n    "replacement_text": "your improved personalized version",\n    "cro_reason": "one sentence explaining why this improves conversion"\n  }}\n]"""
 
 
 def _resolve_api_key(api_key_override: str | None) -> str:
@@ -62,10 +90,14 @@ Return ONLY a valid JSON object with exactly these fields, no markdown formattin
 
 If you cannot determine a field, use a reasonable inference. Never return null."""
 
-        response = _generate_with_fallback([
-            {"mime_type": "image/png", "data": image_bytes},
-            prompt,
-        ], api_key_override=api_key_override)
+        response = await asyncio.to_thread(
+            _generate_with_fallback,
+            [
+                {"mime_type": "image/png", "data": image_bytes},
+                prompt,
+            ],
+            api_key_override,
+        )
         
         # Extract JSON from response
         response_text = response.text.strip()
@@ -90,35 +122,13 @@ async def generate_modifications(
 ) -> List[Modification]:
     """Generate CRO modification strategy using Gemini"""
     try:
-        prompt = f"""You are a world-class CRO (Conversion Rate Optimization) specialist.
+        prompt = _build_modification_prompt(ad_analysis, lp_content)
 
-AD ANALYSIS:
-{json.dumps(ad_analysis.model_dump(), indent=2)}
-
-CURRENT LANDING PAGE CONTENT:
-{json.dumps(lp_content, indent=2)}
-
-Your job: Generate specific text modifications to personalize this landing page to match the ad creative.
-
-Rules:
-1. Message match: The LP headline must echo the ad's core message so visitors feel continuity
-2. Only modify text that exists in the LP content provided
-3. Keep changes natural and professional — no keyword stuffing
-4. Each replacement must be meaningfully different from the original
-5. Maximum 8 modifications total
-6. Focus on: h1, hero subtext, primary CTA button, meta description
-
-Return ONLY a valid JSON array, no markdown, no preamble:
-[
-  {{
-    "element_type": "h1|h2|h3|cta_button|hero_subtext|meta_description",
-    "original_text": "exact original text from LP content",
-    "replacement_text": "your improved personalized version",
-    "cro_reason": "one sentence explaining why this improves conversion"
-  }}
-]"""
-
-        response = _generate_with_fallback(prompt, api_key_override=api_key_override)
+        response = await asyncio.to_thread(
+            _generate_with_fallback,
+            prompt,
+            api_key_override,
+        )
 
         # Extract JSON from response
         response_text = response.text.strip()

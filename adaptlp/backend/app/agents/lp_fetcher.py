@@ -7,6 +7,48 @@ class LPFetchError(Exception):
     pass
 
 
+def _normalize_text(value: str | None) -> str:
+    return " ".join((value or "").split()).strip()
+
+
+def _is_meaningful_paragraph(tag) -> bool:
+    if not tag:
+        return False
+
+    text = _normalize_text(tag.get_text(" ", strip=True))
+    if not text or len(text) < 15:
+        return False
+
+    class_name = " ".join(tag.get("class", [])).lower() if tag.get("class") else ""
+    if any(token in class_name for token in ("hero", "lead", "subtitle", "subtext", "strap", "intro")):
+        return True
+
+    if any(token in text.lower() for token in ("free", "save", "start", "try", "sign up", "book", "learn")):
+        return True
+
+    return len(text) >= 30 or any(punctuation in text for punctuation in (".", "!", "?"))
+
+
+def _extract_hero_subtext(soup: BeautifulSoup, h1_tag) -> str:
+    header = soup.find("header")
+    if header:
+        header_paragraphs = header.find_all("p")
+        for paragraph in header_paragraphs:
+            if _is_meaningful_paragraph(paragraph):
+                return _normalize_text(paragraph.get_text(" ", strip=True))
+
+    if h1_tag:
+        for paragraph in h1_tag.find_all_next("p"):
+            if _is_meaningful_paragraph(paragraph):
+                return _normalize_text(paragraph.get_text(" ", strip=True))
+
+    for paragraph in soup.find_all("p"):
+        if _is_meaningful_paragraph(paragraph):
+            return _normalize_text(paragraph.get_text(" ", strip=True))
+
+    return ""
+
+
 async def _fetch_page(url: str, verify: bool) -> httpx.Response:
     async with httpx.AsyncClient(
         timeout=REQUEST_TIMEOUT_SECONDS,
@@ -47,23 +89,7 @@ async def fetch_and_parse(url: str) -> LPContent:
         if meta_tag and meta_tag.get("content"):
             meta_desc = meta_tag["content"]
             
-        # Extract hero subtext (first p after h1 or in header)
-        hero_subtext = ""
-        header = soup.find("header")
-        if header:
-            p_tag = header.find("p")
-            if p_tag:
-                hero_subtext = p_tag.get_text(strip=True)
-            
-        if not hero_subtext:
-            if h1_tag:
-                next_p = h1_tag.find_next("p")
-                if next_p:
-                    hero_subtext = next_p.get_text(strip=True)
-            else:
-                p_tags = soup.find_all("p")
-                if p_tags:
-                    hero_subtext = p_tags[0].get_text(strip=True)
+        hero_subtext = _extract_hero_subtext(soup, h1_tag)
             
         # Extract CTA buttons
         cta_buttons = []

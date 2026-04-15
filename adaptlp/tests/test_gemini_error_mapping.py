@@ -11,6 +11,7 @@ def test_quota_error_maps_to_429():
     assert isinstance(exc, HTTPException)
     assert exc.status_code == 429
     assert "quota" in exc.detail.lower()
+    assert "own gemini api key" in exc.detail.lower()
 
 
 def test_auth_error_maps_to_401():

@@ -7,6 +7,7 @@ from app.agents.html_patcher import apply_modifications
 from app.services.screenshot import get_screenshot, ScreenshotError
 from app.services.gemini import GeminiError
 from app.agents.lp_fetcher import LPFetchError
+from app.config import PERSONALIZE_AGENT_TIMEOUT_SECONDS
 
 router = APIRouter(prefix="/api", tags=["personalize"])
 
@@ -20,7 +21,7 @@ def _map_gemini_error(stage: str, error_text: str) -> HTTPException:
             status_code=429,
             detail=(
                 "AI quota exceeded for the configured Gemini API key. "
-                "Enable billing or increase quota, then retry."
+                "Enable billing or increase quota, or provide your own Gemini API key in the form field, then retry."
             ),
         )
 
@@ -63,9 +64,17 @@ async def personalize(
         
         # Run agents in parallel (1 & 2)
         try:
-            ad_analysis, lp_content = await asyncio.gather(
-                ad_analyzer.analyze_ad(image_bytes, api_key_override=gemini_api_key),
-                lp_fetcher_agent.fetch_and_parse(lp_url)
+            ad_analysis, lp_content = await asyncio.wait_for(
+                asyncio.gather(
+                    ad_analyzer.analyze_ad(image_bytes, api_key_override=gemini_api_key),
+                    lp_fetcher_agent.fetch_and_parse(lp_url),
+                ),
+                timeout=PERSONALIZE_AGENT_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="Request timed out while analyzing ad and landing page. Try again with a smaller image or another API key.",
             )
         except GeminiError as e:
             raise _map_gemini_error("AI analysis", str(e))
@@ -83,10 +92,18 @@ async def personalize(
                 "cta_buttons": lp_content.cta_buttons,
                 "hero_subtext": lp_content.hero_subtext
             }
-            modifications = await cro_strategist.generate_strategy(
-                ad_analysis,
-                lp_dict,
-                api_key_override=gemini_api_key,
+            modifications = await asyncio.wait_for(
+                cro_strategist.generate_strategy(
+                    ad_analysis,
+                    lp_dict,
+                    api_key_override=gemini_api_key,
+                ),
+                timeout=PERSONALIZE_AGENT_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="Request timed out while generating CRO strategy. Try again with your own Gemini API key.",
             )
         except GeminiError as e:
             raise _map_gemini_error("CRO strategy", str(e))

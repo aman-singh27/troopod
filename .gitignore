@@ -5,6 +5,7 @@ skills/
 .github/skills/
 .tmp-skills/
 TROOPOD_BUILD_PROMPT.md
+fixes.md
 
 # Generated progress/report docs to keep local only
 adaptlp/COMPLETION_STATUS.md
